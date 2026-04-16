@@ -1,0 +1,55 @@
+name: Build sign-tool
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sign tool and detect version
+        id: install
+        shell: pwsh
+        run: |
+          dotnet tool install --tool-path sign-tool sign --prerelease 2>&1 |
+            Tee-Object -Variable output
+          $version = $output |
+            Select-String "version '([^']+)'" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value }
+          if (-not $version) {
+            Write-Error "Failed to detect sign tool version"
+            exit 1
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Detected version: $version"
+
+      - name: Check if release already exists
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v${{ steps.install.outputs.version }}"
+          gh release view $tag 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists, skipping."
+            "skip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "Release $tag does not exist, will create."
+            "skip=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Package and release
+        if: steps.check.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.install.outputs.version }}"
+          $tag = "v$version"
+          Compress-Archive -Path sign-tool/* -DestinationPath sign-tool.zip
+          gh release create $tag sign-tool.zip `
+            --title "sign-tool $version" `
+            --notes "Pre-built dotnet sign tool $version for use on Windows/ARM64 runners."
