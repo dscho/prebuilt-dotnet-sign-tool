@@ -39,6 +39,7 @@ jobs:
             Write-Host "Release $tag already exists, skipping."
             "skip=true" >> $env:GITHUB_OUTPUT
           } else {
+            $global:LASTEXITCODE = 0
             Write-Host "Release $tag does not exist, will create."
             "skip=false" >> $env:GITHUB_OUTPUT
           }
